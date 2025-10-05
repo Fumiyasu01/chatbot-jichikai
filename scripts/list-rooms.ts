@@ -1,5 +1,11 @@
 import { supabaseAdmin } from '../src/lib/supabase/admin'
 
+interface RoomInfo {
+  id: string
+  name: string
+  created_at: string
+}
+
 async function listRooms() {
   console.log('=== 現在のルーム一覧 ===\n')
 
@@ -13,12 +19,12 @@ async function listRooms() {
     return
   }
 
-  if (data.length === 0) {
+  if (!data || data.length === 0) {
     console.log('ルームがありません')
     return
   }
 
-  data.forEach((room, i) => {
+  (data as RoomInfo[]).forEach((room, i) => {
     console.log(`[${i + 1}] ${room.name}`)
     console.log(`    ID: ${room.id}`)
     console.log(`    URL: http://localhost:3000/admin/${room.id}`)
