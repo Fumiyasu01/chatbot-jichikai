@@ -37,13 +37,18 @@ export async function POST(request: NextRequest) {
     const parallelStart = Date.now()
 
     const [roomResult, embeddingResult] = await Promise.all([
-      supabaseAdmin
-        .from('rooms')
-        .select('name, openai_api_key, meta_prompt')
-        .eq('id', roomId)
-        .single()
-        .then(result => ({ result, error: null }))
-        .catch(error => ({ result: null, error })),
+      (async () => {
+        try {
+          const result = await supabaseAdmin
+            .from('rooms')
+            .select('name, openai_api_key, meta_prompt')
+            .eq('id', roomId)
+            .single()
+          return { result, error: null }
+        } catch (error) {
+          return { result: null, error }
+        }
+      })(),
 
       (async () => {
         try {
