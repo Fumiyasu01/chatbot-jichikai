@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { extractText } from '@/lib/utils/text-extraction'
 import { splitIntoChunks } from '@/lib/utils/chunking'
 import { decrypt } from '@/lib/utils/crypto'
+import { requireAuth } from '@/lib/auth-middleware'
 import OpenAI from 'openai'
 
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
@@ -20,18 +21,16 @@ export async function POST(
   console.log('Room ID:', roomId)
 
   try {
-    const adminKey = request.headers.get('x-admin-key')
-    console.log('Admin key present:', !!adminKey)
+    const auth = await requireAuth(request, roomId)
 
-    if (!adminKey) {
-      console.log('No admin key provided')
+    if (!auth.authenticated) {
       return NextResponse.json(
-        { error: '認証に失敗しました' },
+        { error: auth.error || '認証に失敗しました' },
         { status: 401 }
       )
     }
 
-    // Verify room access
+    // Get room data
     const { data: room, error: roomError } = await supabaseAdmin
       .from('rooms')
       .select('admin_key, openai_api_key')
@@ -45,15 +44,7 @@ export async function POST(
       )
     }
 
-    const isSuperAdmin = adminKey === process.env.SUPER_ADMIN_KEY
-    const isRoomAdmin = adminKey === room.admin_key
-
-    if (!isSuperAdmin && !isRoomAdmin) {
-      return NextResponse.json(
-        { error: 'アクセス権限がありません' },
-        { status: 403 }
-      )
-    }
+    const roomData = room as { admin_key: string; openai_api_key: string }
 
     // Parse form data
     const formData = await request.formData()
@@ -114,8 +105,8 @@ export async function POST(
     console.log('Skipping storage upload, processing file directly...')
 
     // Save file metadata
-    const { data: fileMetadata, error: fileError } = await supabaseAdmin
-      .from('files')
+    const { data: fileMetadata, error: fileError } = await (supabaseAdmin
+      .from('files') as any)
       .insert({
         room_id: roomId,
         file_name: file.name,
@@ -147,7 +138,7 @@ export async function POST(
     // Decrypt OpenAI API key
     let openaiApiKey: string
     try {
-      openaiApiKey = decrypt(room.openai_api_key, ENCRYPTION_PASSWORD)
+      openaiApiKey = decrypt(roomData.openai_api_key, ENCRYPTION_PASSWORD)
     } catch (error) {
       console.error('Decryption error:', error)
       return NextResponse.json(
@@ -201,8 +192,8 @@ export async function POST(
 
       // Insert documents into database
       console.log('Inserting documents into Supabase...')
-      const { error: insertError } = await supabaseAdmin
-        .from('documents')
+      const { error: insertError } = await (supabaseAdmin
+        .from('documents') as any)
         .insert(documents)
 
       if (insertError) {

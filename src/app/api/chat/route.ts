@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     console.log('[TIMING] Starting hybrid search...')
     const searchStart = Date.now()
 
-    const { data: matchedDocs, error: searchError } = await supabaseAdmin.rpc(
+    const { data: matchedDocs, error: searchError } = await (supabaseAdmin.rpc as any)(
       'hybrid_search_documents',
       {
         query_embedding: queryEmbedding,

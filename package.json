@@ -13,6 +13,8 @@
     "ai": "^3.0.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "iron-session": "^8.0.4",
+    "js-cookie": "^3.0.5",
     "lucide-react": "^0.303.0",
     "mammoth": "^1.6.0",
     "next": "^15.5.4",
@@ -26,6 +28,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/js-cookie": "^3.0.6",
     "@types/node": "^20",
     "@types/pdf-parse": "^1.1.4",
     "@types/react": "^18",

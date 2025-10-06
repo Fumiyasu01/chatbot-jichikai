@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { updateRoomSchema } from '@/lib/utils/validation'
 import { encrypt, decrypt } from '@/lib/utils/crypto'
+import { requireAuth } from '@/lib/auth-middleware'
 
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
 
@@ -12,11 +13,11 @@ export async function GET(
 ) {
   const { roomId } = await params
   try {
-    const adminKey = request.headers.get('x-admin-key')
+    const auth = await requireAuth(request, roomId)
 
-    if (!adminKey) {
+    if (!auth.authenticated) {
       return NextResponse.json(
-        { error: '認証に失敗しました' },
+        { error: auth.error || '認証に失敗しました' },
         { status: 401 }
       )
     }
@@ -35,21 +36,12 @@ export async function GET(
       )
     }
 
-    // Verify admin access (either super admin or room admin)
-    const isSuperAdmin = adminKey === process.env.SUPER_ADMIN_KEY
-    const isRoomAdmin = adminKey === room.admin_key
-
-    if (!isSuperAdmin && !isRoomAdmin) {
-      return NextResponse.json(
-        { error: 'アクセス権限がありません' },
-        { status: 403 }
-      )
-    }
+    const roomData = room as any
 
     // Decrypt OpenAI API key for display (masked)
     let apiKeyDisplay = '****'
     try {
-      const decryptedKey = decrypt(room.openai_api_key, ENCRYPTION_PASSWORD)
+      const decryptedKey = decrypt(roomData.openai_api_key, ENCRYPTION_PASSWORD)
       apiKeyDisplay = decryptedKey.substring(0, 7) + '...' + decryptedKey.slice(-4)
     } catch (error) {
       console.error('Failed to decrypt API key:', error)
@@ -57,13 +49,13 @@ export async function GET(
 
     return NextResponse.json({
       room: {
-        id: room.id,
-        name: room.name,
-        admin_key: room.admin_key,
+        id: roomData.id,
+        name: roomData.name,
+        admin_key: roomData.admin_key,
         openai_api_key_display: apiKeyDisplay,
-        meta_prompt: room.meta_prompt,
-        created_at: room.created_at,
-        updated_at: room.updated_at,
+        meta_prompt: roomData.meta_prompt,
+        created_at: roomData.created_at,
+        updated_at: roomData.updated_at,
       },
     })
   } catch (error) {
@@ -82,11 +74,11 @@ export async function PATCH(
 ) {
   const { roomId } = await params
   try {
-    const adminKey = request.headers.get('x-admin-key')
+    const auth = await requireAuth(request, roomId)
 
-    if (!adminKey) {
+    if (!auth.authenticated) {
       return NextResponse.json(
-        { error: '認証に失敗しました' },
+        { error: auth.error || '認証に失敗しました' },
         { status: 401 }
       )
     }
@@ -105,16 +97,7 @@ export async function PATCH(
       )
     }
 
-    // Verify admin access
-    const isSuperAdmin = adminKey === process.env.SUPER_ADMIN_KEY
-    const isRoomAdmin = adminKey === room.admin_key
-
-    if (!isSuperAdmin && !isRoomAdmin) {
-      return NextResponse.json(
-        { error: 'アクセス権限がありません' },
-        { status: 403 }
-      )
-    }
+    const roomInfo = room as { admin_key: string; name: string; meta_prompt: string | null }
 
     const body = await request.json()
 
@@ -146,15 +129,14 @@ export async function PATCH(
       return NextResponse.json({
         room: {
           id: roomId,
-          name: room.name,
-          meta_prompt: room.meta_prompt,
+          name: roomInfo.name,
+          meta_prompt: roomInfo.meta_prompt,
         },
       })
     }
 
     // Update room
-    const { data: updatedRoom, error: updateError } = await supabaseAdmin
-      .from('rooms')
+    const { data: updatedRoom, error: updateError } = await (supabaseAdmin.from('rooms') as any)
       .update(updateData)
       .eq('id', roomId)
       .select('id, name, meta_prompt, updated_at')

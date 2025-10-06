@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -24,12 +24,21 @@ interface FileMetadata {
   created_at: string
 }
 
+interface UsageSummary {
+  total_events: number
+  total_tokens: number
+  total_cost: number
+  chat_count: number
+  upload_count: number
+  embedding_count: number
+}
+
 export default function RoomAdminPage() {
   const params = useParams()
-  const searchParams = useSearchParams()
+  const router = useRouter()
   const roomId = params.roomId as string
-  const adminKey = searchParams.get('key') || ''
 
+  const [authenticated, setAuthenticated] = useState(false)
   const [room, setRoom] = useState<Room | null>(null)
   const [files, setFiles] = useState<FileMetadata[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,20 +55,52 @@ export default function RoomAdminPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState('')
 
+  // Usage tracking
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
+  const [usagePeriod, setUsagePeriod] = useState(30)
+
+  // Check authentication on mount
   useEffect(() => {
-    if (roomId && adminKey) {
-      fetchRoomData()
-      fetchFiles()
+    checkAuthentication()
+  }, [roomId])
+
+  const checkAuthentication = async () => {
+    try {
+      const response = await fetch('/api/auth/session')
+      const data = await response.json()
+
+      if (!data.authenticated || data.roomId !== roomId) {
+        // Not authenticated or wrong room, redirect to login
+        router.push(`/admin/${roomId}/login`)
+        return
+      }
+
+      setAuthenticated(true)
+      await fetchRoomData()
+      await fetchFiles()
+      await fetchUsage()
+    } catch (err) {
+      console.error('Authentication check failed:', err)
+      router.push(`/admin/${roomId}/login`)
     }
-  }, [roomId, adminKey])
+  }
+
+  const fetchUsage = async () => {
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/usage?period=${usagePeriod}`)
+
+      if (response.ok) {
+        const data = await response.json()
+        setUsage(data.summary)
+      }
+    } catch (err) {
+      console.error('Failed to fetch usage:', err)
+    }
+  }
 
   const fetchRoomData = async () => {
     try {
-      const response = await fetch(`/api/rooms/${roomId}`, {
-        headers: {
-          'x-admin-key': adminKey,
-        },
-      })
+      const response = await fetch(`/api/rooms/${roomId}`)
 
       if (!response.ok) {
         throw new Error('ルームの取得に失敗しました')
@@ -78,11 +119,7 @@ export default function RoomAdminPage() {
 
   const fetchFiles = async () => {
     try {
-      const response = await fetch(`/api/rooms/${roomId}/files`, {
-        headers: {
-          'x-admin-key': adminKey,
-        },
-      })
+      const response = await fetch(`/api/rooms/${roomId}/files`)
 
       if (response.ok) {
         const data = await response.json()
@@ -114,7 +151,6 @@ export default function RoomAdminPage() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-key': adminKey,
         },
         body: JSON.stringify(updateData),
       })
@@ -152,9 +188,6 @@ export default function RoomAdminPage() {
       setUploadProgress('テキストを抽出中...')
       const response = await fetch(`/api/rooms/${roomId}/upload`, {
         method: 'POST',
-        headers: {
-          'x-admin-key': adminKey,
-        },
         body: formData,
       })
 
@@ -189,9 +222,6 @@ export default function RoomAdminPage() {
     try {
       const response = await fetch(`/api/rooms/${roomId}/files/${fileId}`, {
         method: 'DELETE',
-        headers: {
-          'x-admin-key': adminKey,
-        },
       })
 
       if (!response.ok) {
@@ -204,7 +234,16 @@ export default function RoomAdminPage() {
     }
   }
 
-  if (loading) {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      router.push(`/admin/${roomId}/login`)
+    } catch (err) {
+      console.error('Logout error:', err)
+    }
+  }
+
+  if (!authenticated || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p>読み込み中...</p>
@@ -227,9 +266,14 @@ export default function RoomAdminPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">{room.name}</h1>
-          <p className="text-gray-600 mt-2">ルーム管理画面</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold">{room.name}</h1>
+            <p className="text-gray-600 mt-2">ルーム管理画面</p>
+          </div>
+          <Button variant="outline" onClick={handleLogout}>
+            ログアウト
+          </Button>
         </div>
 
         {/* Room Settings */}
@@ -290,7 +334,7 @@ export default function RoomAdminPage() {
           <CardHeader>
             <CardTitle>ファイルアップロード</CardTitle>
             <CardDescription>
-              PDF、Word、テキスト、Markdownファイルをアップロードできます
+              PDF、Word、テキスト、Markdownファイルをアップロードできます（最大10MB）
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -346,6 +390,46 @@ export default function RoomAdminPage() {
                 ))
               )}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Usage Dashboard */}
+        <Card>
+          <CardHeader>
+            <CardTitle>使用量ダッシュボード</CardTitle>
+            <CardDescription>過去{usagePeriod}日間の使用状況</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {usage ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-gray-600">総イベント数</p>
+                  <p className="text-2xl font-bold">{usage.total_events}</p>
+                </div>
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <p className="text-sm text-gray-600">チャット数</p>
+                  <p className="text-2xl font-bold">{usage.chat_count}</p>
+                </div>
+                <div className="p-4 bg-purple-50 rounded-lg">
+                  <p className="text-sm text-gray-600">ファイル数</p>
+                  <p className="text-2xl font-bold">{usage.upload_count}</p>
+                </div>
+                <div className="p-4 bg-yellow-50 rounded-lg">
+                  <p className="text-sm text-gray-600">使用トークン</p>
+                  <p className="text-2xl font-bold">{usage.total_tokens.toLocaleString()}</p>
+                </div>
+                <div className="p-4 bg-red-50 rounded-lg">
+                  <p className="text-sm text-gray-600">推定コスト</p>
+                  <p className="text-2xl font-bold">${Number(usage.total_cost).toFixed(4)}</p>
+                </div>
+                <div className="p-4 bg-indigo-50 rounded-lg">
+                  <p className="text-sm text-gray-600">Embedding処理</p>
+                  <p className="text-2xl font-bold">{usage.embedding_count}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-gray-500">使用量データを読み込み中...</p>
+            )}
           </CardContent>
         </Card>
 

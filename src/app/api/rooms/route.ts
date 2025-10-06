@@ -73,8 +73,8 @@ export async function POST(request: NextRequest) {
     const encryptedApiKey = encrypt(openai_api_key, ENCRYPTION_PASSWORD)
 
     // Create room in database
-    const { data: room, error } = await supabaseAdmin
-      .from('rooms')
+    const { data: room, error } = await (supabaseAdmin
+      .from('rooms') as any)
       .insert({
         name,
         admin_key: roomAdminKey,
