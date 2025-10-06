@@ -21,8 +21,10 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showGuide, setShowGuide] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     // Fetch room name
@@ -170,7 +172,21 @@ export default function ChatPage() {
       }
     } catch (err) {
       console.error('Chat error:', err)
-      setError(err instanceof Error ? err.message : 'エラーが発生しました')
+
+      // User-friendly error messages
+      let errorMessage = '申し訳ございません。一時的に接続できませんでした。少し時間を置いてから再度お試しください。'
+
+      if (err instanceof Error) {
+        if (err.message.includes('timeout') || err.message.includes('タイムアウト')) {
+          errorMessage = '処理に時間がかかっています。恐れ入りますが、少し時間を置いてから再度お試しください。'
+        } else if (err.message.includes('ネットワーク') || err.message.includes('network')) {
+          errorMessage = 'インターネット接続を確認してから、再度お試しください。'
+        } else if (err.message.includes('APIキー') || err.message.includes('api')) {
+          errorMessage = 'システムの設定に問題があります。管理者にお問い合わせください。'
+        }
+      }
+
+      setError(errorMessage)
 
       // Remove the last user message if there was an error
       setMessages(messages)
@@ -184,17 +200,73 @@ export default function ChatPage() {
       <div className="max-w-4xl mx-auto p-4 md:p-8">
         <Card className="shadow-xl">
           <CardHeader className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-lg">
-            <CardTitle className="text-2xl">{roomName}</CardTitle>
-            <p className="text-blue-100 text-sm">AIがご質問にお答えします</p>
+            <div className="flex justify-between items-start">
+              <div>
+                <CardTitle className="text-xl md:text-2xl">{roomName}</CardTitle>
+                <p className="text-blue-100 text-sm mt-1">AIがご質問にお答えします</p>
+              </div>
+              <button
+                onClick={() => setShowGuide(!showGuide)}
+                className="text-white hover:text-blue-100 transition-colors text-sm underline"
+              >
+                {showGuide ? '閉じる' : '使い方'}
+              </button>
+            </div>
           </CardHeader>
 
           <CardContent className="p-0">
+            {/* Usage Guide */}
+            {showGuide && (
+              <div className="bg-blue-50 border-b border-blue-200 p-4 md:p-6">
+                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                  <span>📖</span>
+                  <span>使い方ガイド</span>
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700">
+                  <div>
+                    <p className="font-medium mb-1">💡 このチャットボットについて</p>
+                    <p className="text-xs pl-4">自治会の資料をもとに、AIが24時間いつでもご質問にお答えします。</p>
+                  </div>
+                  <div>
+                    <p className="font-medium mb-1">📝 質問例</p>
+                    <ul className="text-xs pl-4 space-y-1">
+                      <li>• ゴミの収集日はいつですか？</li>
+                      <li>• 集会所の利用方法を教えてください</li>
+                      <li>• 自治会費の支払い方法について</li>
+                      <li>• 駐車場の利用ルールは？</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-medium mb-1">📄 参考資料の見方</p>
+                    <p className="text-xs pl-4">回答の下に表示される「参考資料」は、回答の根拠となった資料です。</p>
+                  </div>
+                  <div className="bg-yellow-50 border border-yellow-200 rounded p-2 mt-3">
+                    <p className="text-xs">
+                      <strong>⚠️ ご注意：</strong>
+                      AIによる回答のため、誤りがある可能性があります。重要な事項は必ず管理組合にご確認ください。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Messages Area */}
-            <div className="h-[500px] overflow-y-auto p-6 space-y-4 bg-white">
-              {messages.length === 0 && (
-                <div className="text-center text-gray-500 mt-20">
-                  <p className="text-lg mb-2">👋 こんにちは！</p>
-                  <p>何でもお気軽にご質問ください。</p>
+            <div className="h-[500px] overflow-y-auto p-4 md:p-6 space-y-4 bg-white">
+              {messages.length === 0 && !showGuide && (
+                <div className="text-center text-gray-500 mt-12 md:mt-20 px-4">
+                  <p className="text-xl md:text-2xl mb-3">👋 こんにちは！</p>
+                  <p className="text-sm md:text-base mb-4">自治会に関するご質問にお答えします</p>
+                  <div className="max-w-md mx-auto bg-blue-50 rounded-lg p-4 text-left text-xs md:text-sm">
+                    <p className="font-medium text-blue-900 mb-2">💡 質問例:</p>
+                    <ul className="space-y-1 text-gray-700">
+                      <li>• ゴミの収集日について教えてください</li>
+                      <li>• 集会所を利用したいのですが</li>
+                      <li>• 駐車場のルールを確認したい</li>
+                    </ul>
+                    <p className="text-xs text-gray-500 mt-3">
+                      右上の「使い方」ボタンで詳しい説明をご覧いただけます
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -268,29 +340,40 @@ export default function ChatPage() {
             </div>
 
             {/* Input Area */}
-            <div className="border-t p-4 bg-gray-50">
+            <div className="border-t p-3 md:p-4 bg-gray-50">
               {error && (
-                <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                  {error}
+                <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm shadow-sm">
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg">⚠️</span>
+                    <p className="flex-1">{error}</p>
+                  </div>
                 </div>
               )}
 
               <form onSubmit={handleSubmit} className="flex gap-2">
                 <Input
+                  ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="メッセージを入力..."
                   disabled={loading}
-                  className="flex-1"
+                  className="flex-1 text-base md:text-sm min-h-[44px] md:min-h-[36px]"
                   maxLength={2000}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
                 />
-                <Button type="submit" disabled={loading || !input.trim()}>
+                <Button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="min-w-[80px] min-h-[44px] md:min-h-[36px] text-base md:text-sm"
+                >
                   {loading ? '送信中...' : '送信'}
                 </Button>
               </form>
 
-              <p className="text-xs text-gray-500 mt-2">
-                Enter キーで送信 · {input.length}/2000文字
+              <p className="text-xs text-gray-500 mt-2 text-center md:text-left">
+                {input.length}/2000文字
               </p>
             </div>
           </CardContent>

@@ -177,15 +177,22 @@ export default function RoomAdminPage() {
     e.preventDefault()
     if (!selectedFile) return
 
+    // File size check
+    const fileSizeMB = selectedFile.size / (1024 * 1024)
+    if (fileSizeMB > 10) {
+      setError('ファイルサイズは10MB以下にしてください')
+      return
+    }
+
     setUploading(true)
-    setUploadProgress('ファイルをアップロード中...')
+    setUploadProgress('📤 ファイルをアップロード中... (1/3)')
     setError('')
 
     try {
       const formData = new FormData()
       formData.append('file', selectedFile)
 
-      setUploadProgress('テキストを抽出中...')
+      setUploadProgress(`📄 テキストを抽出中... (2/3) - ${fileSizeMB.toFixed(1)}MB`)
       const response = await fetch(`/api/rooms/${roomId}/upload`, {
         method: 'POST',
         body: formData,
@@ -194,18 +201,30 @@ export default function RoomAdminPage() {
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         console.error('Upload error response:', data)
-        throw new Error(data.error || 'アップロードに失敗しました')
+
+        // User-friendly error messages
+        let errorMsg = 'アップロードに失敗しました'
+        if (data.error?.includes('timeout') || data.error?.includes('タイムアウト')) {
+          errorMsg = 'ファイルが大きすぎて処理できませんでした。5MB以下のファイルをお試しください。'
+        } else if (data.error?.includes('APIキー')) {
+          errorMsg = 'OpenAI APIキーが設定されていません。設定画面でAPIキーを登録してください。'
+        } else if (data.error) {
+          errorMsg = data.error
+        }
+
+        throw new Error(errorMsg)
       }
 
       const result = await response.json()
       console.log('Upload success:', result)
 
-      setUploadProgress('完了しました')
+      setUploadProgress('✅ 完了しました！')
       setSelectedFile(null)
       setError('')
       await fetchFiles()
+      await fetchUsage() // Refresh usage stats
 
-      setTimeout(() => setUploadProgress(''), 2000)
+      setTimeout(() => setUploadProgress(''), 3000)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'エラーが発生しました'
       setError(errorMessage)
@@ -339,17 +358,35 @@ export default function RoomAdminPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleFileUpload} className="space-y-4">
-              <Input
-                type="file"
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                accept=".pdf,.doc,.docx,.txt,.md"
-              />
+              <div>
+                <Input
+                  type="file"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  accept=".pdf,.doc,.docx,.txt,.md"
+                  disabled={uploading}
+                />
+                {selectedFile && !uploading && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    選択: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+              </div>
 
               {uploadProgress && (
-                <p className="text-sm text-blue-600">{uploadProgress}</p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin">⏳</div>
+                    <p className="text-sm text-blue-700 font-medium">{uploadProgress}</p>
+                  </div>
+                  {uploading && (
+                    <div className="mt-2 bg-blue-200 rounded-full h-1.5 overflow-hidden">
+                      <div className="bg-blue-600 h-full rounded-full animate-pulse" style={{ width: '70%' }} />
+                    </div>
+                  )}
+                </div>
               )}
 
-              <Button type="submit" disabled={!selectedFile || uploading}>
+              <Button type="submit" disabled={!selectedFile || uploading} className="w-full md:w-auto">
                 {uploading ? 'アップロード中...' : 'アップロード'}
               </Button>
             </form>
