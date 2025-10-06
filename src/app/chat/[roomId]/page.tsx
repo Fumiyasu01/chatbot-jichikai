@@ -216,22 +216,35 @@ export default function ChatPage() {
 
                     {message.sources && message.sources.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-300">
-                        <p className="text-xs text-gray-600 mb-1">
+                        <p className="text-xs text-gray-600 mb-2">
                           参考資料:
                         </p>
-                        <div className="space-y-1">
-                          {message.sources.map((source, idx) => (
-                            <div
-                              key={idx}
-                              className="text-xs text-gray-500 flex items-center gap-2"
-                            >
-                              <span>📄</span>
-                              <span>{source.file_name}</span>
-                              <span className="text-gray-400">
-                                (関連度: {(source.similarity * 100).toFixed(0)}%)
-                              </span>
-                            </div>
-                          ))}
+                        <div className="space-y-2">
+                          {(() => {
+                            // Group sources by file_name
+                            const groupedSources = message.sources.reduce((acc, source) => {
+                              if (!acc[source.file_name]) {
+                                acc[source.file_name] = []
+                              }
+                              acc[source.file_name].push(source.similarity)
+                              return acc
+                            }, {} as Record<string, number[]>)
+
+                            return Object.entries(groupedSources).map(([fileName, similarities], idx) => (
+                              <div key={idx} className="text-xs">
+                                <div className="text-gray-600 flex items-center gap-2 mb-1">
+                                  <span>📄</span>
+                                  <span className="font-medium">{fileName}</span>
+                                  <span className="text-gray-400">
+                                    ({similarities.length}箇所参照)
+                                  </span>
+                                </div>
+                                <div className="ml-5 text-gray-500">
+                                  類似度: {similarities.map(s => `${(s * 100).toFixed(0)}%`).join(', ')}
+                                </div>
+                              </div>
+                            ))
+                          })()}
                         </div>
                       </div>
                     )}
