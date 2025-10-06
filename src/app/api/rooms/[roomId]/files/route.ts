@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { requireAuth } from '@/lib/auth-middleware'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/rooms/[roomId]/files - Get all files for a room
 export async function GET(
   request: NextRequest,

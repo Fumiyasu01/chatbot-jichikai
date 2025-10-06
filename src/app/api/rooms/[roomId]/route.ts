@@ -6,6 +6,8 @@ import { requireAuth } from '@/lib/auth-middleware'
 
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/rooms/[roomId] - Get room details
 export async function GET(
   request: NextRequest,

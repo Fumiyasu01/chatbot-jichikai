@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { requireAuth } from '@/lib/auth-middleware'
 
+export const dynamic = 'force-dynamic'
+
 // DELETE /api/rooms/[roomId]/files/[fileId] - Delete a file
 export async function DELETE(
   request: NextRequest,

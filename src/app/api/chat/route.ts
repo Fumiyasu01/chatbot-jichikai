@@ -6,6 +6,8 @@ import OpenAI from 'openai'
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
 const REQUEST_TIMEOUT_MS = 60000 // 60 seconds
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
 

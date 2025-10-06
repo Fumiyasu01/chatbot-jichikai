@@ -6,6 +6,8 @@ import { z } from 'zod'
 
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/rooms - Get all rooms (super admin only)
 export async function GET(request: NextRequest) {
   try {

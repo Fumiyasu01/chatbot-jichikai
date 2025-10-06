@@ -9,6 +9,8 @@ import OpenAI from 'openai'
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
+export const dynamic = 'force-dynamic'
+
 // Set max duration for large file uploads (10 minutes)
 export const maxDuration = 600
 
