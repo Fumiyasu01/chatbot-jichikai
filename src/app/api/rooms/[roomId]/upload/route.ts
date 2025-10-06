@@ -11,8 +11,8 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 export const dynamic = 'force-dynamic'
 
-// Set max duration for large file uploads (10 minutes)
-export const maxDuration = 600
+// Set max duration for large file uploads (5 minutes - Vercel Hobby plan limit)
+export const maxDuration = 300
 
 export async function POST(
   request: NextRequest,
