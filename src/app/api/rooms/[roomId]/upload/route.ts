@@ -4,6 +4,7 @@ import { extractText } from '@/lib/utils/text-extraction'
 import { splitIntoChunks } from '@/lib/utils/chunking'
 import { decrypt } from '@/lib/utils/crypto'
 import { requireAuth } from '@/lib/auth-middleware'
+import { logUsage, estimateTokens } from '@/lib/usage-tracking'
 import OpenAI from 'openai'
 
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
@@ -161,6 +162,7 @@ export async function POST(
 
       const BATCH_SIZE = 100 // Process 100 chunks at a time
       const embeddings: any[] = []
+      let totalTokensUsed = 0
 
       for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
         const batch = chunks.slice(i, i + BATCH_SIZE)
@@ -176,12 +178,17 @@ export async function POST(
 
         embeddings.push(...embeddingResponse.data)
 
-        console.log(`Batch ${batchNumber}/${totalBatches} completed (${embeddings.length}/${chunks.length} total)`)
+        // Track token usage for this batch
+        const batchTokens = embeddingResponse.usage?.total_tokens || 0
+        totalTokensUsed += batchTokens
+
+        console.log(`Batch ${batchNumber}/${totalBatches} completed (${embeddings.length}/${chunks.length} total, ${batchTokens} tokens)`)
       }
 
       console.log('Embeddings generated successfully:', {
         embeddingsCount: embeddings.length,
-        dimensions: embeddings[0].embedding.length
+        dimensions: embeddings[0].embedding.length,
+        totalTokensUsed
       })
 
       // Prepare document records
@@ -205,6 +212,32 @@ export async function POST(
           { status: 500 }
         )
       }
+
+      // Log upload usage
+      await logUsage({
+        roomId,
+        eventType: 'upload',
+        tokensUsed: 0, // Upload itself doesn't use tokens
+        fileName: file.name,
+        chunkCount: chunks.length,
+        metadata: {
+          fileSize: file.size,
+          mimeType: file.type,
+        },
+      })
+
+      // Log embedding usage
+      await logUsage({
+        roomId,
+        eventType: 'embedding',
+        tokensUsed: totalTokensUsed,
+        fileName: file.name,
+        chunkCount: chunks.length,
+        metadata: {
+          model: 'text-embedding-3-small',
+          embeddingsCount: embeddings.length,
+        },
+      })
 
       console.log('Upload completed successfully!')
       return NextResponse.json({
