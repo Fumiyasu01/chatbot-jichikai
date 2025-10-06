@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { decrypt } from '@/lib/utils/crypto'
+import { logUsage, estimateTokens } from '@/lib/usage-tracking'
 import OpenAI from 'openai'
 
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
@@ -243,6 +244,23 @@ ${context}`,
             console.log(`Answer length: ${fullAnswer.length} chars`)
             console.log(`Answer: ${fullAnswer.substring(0, 200)}...`)
 
+            // Log usage (estimate tokens since streaming doesn't provide token count)
+            const estimatedInputTokens = estimateTokens(message + context)
+            const estimatedOutputTokens = estimateTokens(fullAnswer)
+            const totalTokens = estimatedInputTokens + estimatedOutputTokens
+
+            await logUsage({
+              roomId,
+              eventType: 'chat',
+              tokensUsed: totalTokens,
+              metadata: {
+                model: 'gpt-4o-mini',
+                streaming: true,
+                estimatedInputTokens,
+                estimatedOutputTokens,
+              },
+            })
+
             // Send done signal
             controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'))
             controller.close()
@@ -281,6 +299,20 @@ ${context}`,
 
       console.log('\n=== GPT RESPONSE ===')
       console.log(`Answer: ${answer.substring(0, 200)}...`)
+
+      // Log usage with actual token count
+      const tokensUsed = completion.usage?.total_tokens || 0
+      await logUsage({
+        roomId,
+        eventType: 'chat',
+        tokensUsed,
+        metadata: {
+          model: 'gpt-4o-mini',
+          streaming: false,
+          promptTokens: completion.usage?.prompt_tokens,
+          completionTokens: completion.usage?.completion_tokens,
+        },
+      })
 
       return NextResponse.json({
         answer,
