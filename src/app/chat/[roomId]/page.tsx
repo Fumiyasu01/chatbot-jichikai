@@ -243,7 +243,7 @@ export default function ChatPage() {
                   <div className="bg-yellow-50 border border-yellow-200 rounded p-2 mt-3">
                     <p className="text-xs">
                       <strong>⚠️ ご注意：</strong>
-                      AIによる回答のため、誤りがある可能性があります。重要な事項は必ず管理組合にご確認ください。
+                      AIによる回答のため、誤りがある可能性があります。重要な事項は必ず自治会にご確認ください。
                     </p>
                   </div>
                 </div>
