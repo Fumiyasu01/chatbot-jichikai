@@ -154,7 +154,7 @@ export default function SuperAdminPage() {
                 <Input
                   value={roomName}
                   onChange={(e) => setRoomName(e.target.value)}
-                  placeholder="例: 糸の森自治会"
+                  placeholder="例: 伊都の杜自治会"
                   required
                 />
               </div>
@@ -179,7 +179,7 @@ export default function SuperAdminPage() {
                 <Textarea
                   value={metaPrompt}
                   onChange={(e) => setMetaPrompt(e.target.value)}
-                  placeholder="例: あなたは糸の森自治会の親切なサポートAIです。住民の質問に丁寧に答えてください。"
+                  placeholder="例: あなたは伊都の杜自治会の親切なサポートAIです。住民の質問に丁寧に答えてください。"
                   rows={4}
                 />
               </div>
