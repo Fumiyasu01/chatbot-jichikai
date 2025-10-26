@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { decrypt } from '@/lib/utils/crypto'
 import { logUsage } from '@/lib/usage-tracking'
+import { splitIntoChunks } from '@/lib/utils/chunking'
 import OpenAI from 'openai'
 
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
@@ -112,6 +113,60 @@ export async function POST(
 
     // Initialize OpenAI
     const openai = new OpenAI({ apiKey: openaiApiKey })
+
+    // Check if we need to chunk the text first
+    if (fileData.chunk_count === 0) {
+      console.log('Chunking text for the first time...')
+
+      // Get the full text document
+      const { data: fullTextDoc, error: fullTextError } = await supabaseAdmin
+        .from('documents')
+        .select('id, content')
+        .eq('file_id', fileId)
+        .single()
+
+      if (fullTextError || !fullTextDoc) {
+        throw new Error('全文テキストの取得に失敗しました')
+      }
+
+      const fullText = (fullTextDoc as { id: string; content: string }).content
+
+      // Split into chunks
+      const chunks = splitIntoChunks(fullText, 1000, 200)
+      console.log(`Text split into ${chunks.length} chunks`)
+
+      // Delete the temporary full-text document
+      await (supabaseAdmin
+        .from('documents') as any)
+        .delete()
+        .eq('id', (fullTextDoc as { id: string }).id)
+
+      // Insert chunked documents
+      const chunkDocuments = chunks.map(chunk => ({
+        room_id: roomId,
+        file_id: fileId,
+        file_name: fileData.file_name,
+        content: chunk,
+        embedding: null,
+      }))
+
+      const { error: insertError } = await (supabaseAdmin
+        .from('documents') as any)
+        .insert(chunkDocuments)
+
+      if (insertError) {
+        throw new Error('チャンクドキュメントの保存に失敗しました')
+      }
+
+      // Update file chunk count
+      await (supabaseAdmin
+        .from('files') as any)
+        .update({ chunk_count: chunks.length })
+        .eq('id', fileId)
+
+      fileData.chunk_count = chunks.length
+      console.log(`Chunk count updated: ${chunks.length}`)
+    }
 
     // Get pending documents (those without embeddings)
     const { data: pendingDocs, error: docsError } = await supabaseAdmin

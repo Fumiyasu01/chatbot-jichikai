@@ -82,21 +82,7 @@ export async function POST(
       )
     }
 
-    // Split text into chunks
-    const chunks = splitIntoChunks(text, 1000, 200)
-    console.log('Text chunking successful:', {
-      chunksCount: chunks.length,
-      avgChunkSize: Math.round(chunks.reduce((sum, c) => sum + c.length, 0) / chunks.length)
-    })
-
-    if (chunks.length === 0) {
-      return NextResponse.json(
-        { error: 'テキストのチャンク分割に失敗しました' },
-        { status: 500 }
-      )
-    }
-
-    // Save file metadata with processing status
+    // Save file metadata first (minimal DB operation for fast response)
     const filePath = `${roomId}/${Date.now()}-${file.name}`
 
     const { data: fileMetadata, error: fileError } = await (supabaseAdmin
@@ -108,7 +94,7 @@ export async function POST(
         file_size: file.size,
         mime_type: file.type,
         processing_status: 'pending',
-        chunk_count: chunks.length,
+        chunk_count: 0, // Will be updated during processing
         processed_chunks: 0,
       })
       .select('id')
@@ -124,23 +110,24 @@ export async function POST(
 
     console.log('File metadata saved:', fileMetadata.id)
 
-    // Insert documents without embeddings (will be processed asynchronously)
-    const documents = chunks.map(chunk => ({
-      room_id: roomId,
-      file_id: fileMetadata.id,
-      file_name: file.name,
-      content: chunk,
-      embedding: null, // Will be filled by background processing
-    }))
+    // Store extracted text temporarily for background processing
+    // We'll process chunking and document insertion in the background
+    try {
+      // Store text in a temporary column or separate table
+      // For now, we'll create initial documents with the full text
+      await (supabaseAdmin
+        .from('documents') as any)
+        .insert({
+          room_id: roomId,
+          file_id: fileMetadata.id,
+          file_name: file.name,
+          content: text, // Store full text temporarily
+          embedding: null,
+        })
 
-    console.log('Inserting documents into Supabase...')
-    const { error: insertError } = await (supabaseAdmin
-      .from('documents') as any)
-      .insert(documents)
-
-    if (insertError) {
-      console.error('Document insert error:', insertError)
-
+      console.log('Text stored for background processing')
+    } catch (error) {
+      console.error('Error storing text:', error)
       // Clean up file metadata
       await (supabaseAdmin
         .from('files') as any)
@@ -148,7 +135,7 @@ export async function POST(
         .eq('id', fileMetadata.id)
 
       return NextResponse.json(
-        { error: 'ドキュメントの保存に失敗しました' },
+        { error: 'テキストの保存に失敗しました' },
         { status: 500 }
       )
     }
@@ -157,23 +144,24 @@ export async function POST(
     await logUsage({
       roomId,
       eventType: 'upload',
-      tokensUsed: 0, // Upload itself doesn't use tokens
+      tokensUsed: 0,
       fileName: file.name,
-      chunkCount: chunks.length,
+      chunkCount: 0, // Will be calculated during background processing
       metadata: {
         fileSize: file.size,
         mimeType: file.type,
         fileId: fileMetadata.id,
+        textLength: text.length,
         asyncProcessing: true,
       },
     })
 
-    console.log('Upload completed successfully! Embeddings will be processed asynchronously.')
+    console.log('Upload completed! Text chunking and embedding will be processed asynchronously.')
     return NextResponse.json({
       message: 'ファイルをアップロードしました',
       file_id: fileMetadata.id,
       file_name: file.name,
-      chunks_count: chunks.length,
+      text_length: text.length,
       processing_status: 'pending',
     })
   } catch (error) {
