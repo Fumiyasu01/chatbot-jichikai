@@ -161,11 +161,24 @@ export async function POST(
       // Update file chunk count
       await (supabaseAdmin
         .from('files') as any)
-        .update({ chunk_count: chunks.length })
+        .update({
+          chunk_count: chunks.length,
+          processing_status: 'processing'
+        })
         .eq('id', fileId)
 
       fileData.chunk_count = chunks.length
       console.log(`Chunk count updated: ${chunks.length}`)
+
+      // Return immediately after chunking - embeddings will be processed in next call
+      return NextResponse.json({
+        message: 'Text chunked successfully',
+        status: 'processing',
+        progress: {
+          processed: 0,
+          total: chunks.length
+        }
+      })
     }
 
     // Get pending documents (those without embeddings)
