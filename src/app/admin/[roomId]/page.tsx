@@ -21,7 +21,12 @@ interface FileMetadata {
   id: string
   file_name: string
   file_size: number
+  processing_status: 'pending' | 'processing' | 'completed' | 'failed'
+  chunk_count: number
+  processed_chunks: number
+  error_message: string | null
   created_at: string
+  updated_at: string
 }
 
 interface UsageSummary {
@@ -185,14 +190,14 @@ export default function RoomAdminPage() {
     }
 
     setUploading(true)
-    setUploadProgress('📤 ファイルをアップロード中... (1/3)')
+    setUploadProgress('📤 ファイルをアップロード中...')
     setError('')
 
     try {
       const formData = new FormData()
       formData.append('file', selectedFile)
 
-      setUploadProgress(`📄 テキストを抽出中... (2/3) - ${fileSizeMB.toFixed(1)}MB`)
+      setUploadProgress(`📄 テキストを抽出中... (${fileSizeMB.toFixed(1)}MB)`)
       const response = await fetch(`/api/rooms/${roomId}/upload`, {
         method: 'POST',
         body: formData,
@@ -204,9 +209,7 @@ export default function RoomAdminPage() {
 
         // User-friendly error messages
         let errorMsg = 'アップロードに失敗しました'
-        if (data.error?.includes('timeout') || data.error?.includes('タイムアウト')) {
-          errorMsg = 'ファイルが大きすぎて処理できませんでした。5MB以下のファイルをお試しください。'
-        } else if (data.error?.includes('APIキー')) {
+        if (data.error?.includes('APIキー')) {
           errorMsg = 'OpenAI APIキーが設定されていません。設定画面でAPIキーを登録してください。'
         } else if (data.error) {
           errorMsg = data.error
@@ -218,12 +221,17 @@ export default function RoomAdminPage() {
       const result = await response.json()
       console.log('Upload success:', result)
 
-      setUploadProgress('✅ 完了しました！')
+      setUploadProgress('🔄 AI処理中...')
       setSelectedFile(null)
       setError('')
+
+      // Start async embedding processing
+      await processEmbeddings(result.file_id)
+
       await fetchFiles()
       await fetchUsage() // Refresh usage stats
 
+      setUploadProgress('✅ 完了しました！')
       setTimeout(() => setUploadProgress(''), 3000)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'エラーが発生しました'
@@ -233,6 +241,57 @@ export default function RoomAdminPage() {
     } finally {
       setUploading(false)
     }
+  }
+
+  const processEmbeddings = async (fileId: string) => {
+    let attempts = 0
+    const maxAttempts = 100 // Maximum polling attempts (10 seconds * 100 = ~16 minutes max)
+
+    while (attempts < maxAttempts) {
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/process-embeddings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ fileId }),
+        })
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.error || 'AI処理に失敗しました')
+        }
+
+        const result = await response.json()
+        console.log('Process embeddings result:', result)
+
+        // Update progress
+        if (result.progress) {
+          const percentage = Math.round((result.progress.processed / result.progress.total) * 100)
+          setUploadProgress(`🔄 AI処理中... ${percentage}% (${result.progress.processed}/${result.progress.total})`)
+        }
+
+        // Check if completed
+        if (result.status === 'completed') {
+          console.log('Embedding processing completed!')
+          return
+        }
+
+        // Wait before next poll (1 second)
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        attempts++
+
+        // Refresh file list periodically
+        if (attempts % 5 === 0) {
+          await fetchFiles()
+        }
+      } catch (err) {
+        console.error('Process embeddings error:', err)
+        throw err
+      }
+    }
+
+    throw new Error('AI処理がタイムアウトしました。ファイルは保存されていますが、後で再処理が必要です。')
   }
 
   const handleDeleteFile = async (fileId: string) => {
@@ -409,12 +468,34 @@ export default function RoomAdminPage() {
                     key={file.id}
                     className="p-4 border rounded-lg flex justify-between items-center"
                   >
-                    <div>
+                    <div className="flex-1">
                       <p className="font-medium">{file.file_name}</p>
                       <p className="text-sm text-gray-500">
                         {(file.file_size / 1024).toFixed(1)} KB ·{' '}
                         {new Date(file.created_at).toLocaleDateString('ja-JP')}
                       </p>
+                      <div className="mt-1">
+                        {file.processing_status === 'completed' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                            ✓ 完了 ({file.chunk_count} チャンク)
+                          </span>
+                        )}
+                        {file.processing_status === 'processing' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                            🔄 処理中 ({file.processed_chunks}/{file.chunk_count})
+                          </span>
+                        )}
+                        {file.processing_status === 'pending' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                            ⏳ 待機中
+                          </span>
+                        )}
+                        {file.processing_status === 'failed' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                            ✗ 失敗: {file.error_message}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <Button
                       variant="destructive"

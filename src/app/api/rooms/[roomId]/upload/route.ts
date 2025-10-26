@@ -2,17 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { extractText } from '@/lib/utils/text-extraction'
 import { splitIntoChunks } from '@/lib/utils/chunking'
-import { decrypt } from '@/lib/utils/crypto'
 import { requireAuth } from '@/lib/auth-middleware'
-import { logUsage, estimateTokens } from '@/lib/usage-tracking'
-import OpenAI from 'openai'
+import { logUsage } from '@/lib/usage-tracking'
 
-const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 export const dynamic = 'force-dynamic'
 
-// Set max duration for file uploads (10 seconds - Vercel Hobby plan limit)
+// Reduced to 10 seconds - async processing allows this
 export const maxDuration = 10
 
 export async function POST(
@@ -32,22 +29,6 @@ export async function POST(
         { status: 401 }
       )
     }
-
-    // Get room data
-    const { data: room, error: roomError } = await supabaseAdmin
-      .from('rooms')
-      .select('admin_key, openai_api_key')
-      .eq('id', roomId)
-      .single()
-
-    if (roomError || !room) {
-      return NextResponse.json(
-        { error: 'ルームが見つかりませんでした' },
-        { status: 404 }
-      )
-    }
-
-    const roomData = room as { admin_key: string; openai_api_key: string }
 
     // Parse form data
     const formData = await request.formData()
@@ -101,29 +82,6 @@ export async function POST(
       )
     }
 
-    // Upload file to Supabase Storage
-    const filePath = `${roomId}/${Date.now()}-${file.name}`
-
-    // Skip storage upload for now - we'll store metadata and embeddings directly
-    console.log('Skipping storage upload, processing file directly...')
-
-    // Save file metadata
-    const { data: fileMetadata, error: fileError } = await (supabaseAdmin
-      .from('files') as any)
-      .insert({
-        room_id: roomId,
-        file_name: file.name,
-        file_path: filePath,
-        file_size: file.size,
-        mime_type: file.type,
-      })
-      .select('id')
-      .single()
-
-    if (fileError) {
-      console.error('File metadata error:', fileError)
-    }
-
     // Split text into chunks
     const chunks = splitIntoChunks(text, 1000, 200)
     console.log('Text chunking successful:', {
@@ -138,120 +96,86 @@ export async function POST(
       )
     }
 
-    // Decrypt OpenAI API key
-    let openaiApiKey: string
-    try {
-      openaiApiKey = decrypt(roomData.openai_api_key, ENCRYPTION_PASSWORD)
-    } catch (error) {
-      console.error('Decryption error:', error)
-      return NextResponse.json(
-        { error: 'APIキーの復号化に失敗しました' },
-        { status: 500 }
-      )
-    }
+    // Save file metadata with processing status
+    const filePath = `${roomId}/${Date.now()}-${file.name}`
 
-    // Initialize OpenAI
-    const openai = new OpenAI({
-      apiKey: openaiApiKey,
-    })
-
-    // Generate embeddings for all chunks (in batches for large files)
-    try {
-      console.log('Generating embeddings via OpenAI API...')
-      console.log(`Processing ${chunks.length} chunks...`)
-
-      const BATCH_SIZE = 100 // Process 100 chunks at a time
-      const embeddings: any[] = []
-      let totalTokensUsed = 0
-
-      for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-        const batch = chunks.slice(i, i + BATCH_SIZE)
-        const batchNumber = Math.floor(i / BATCH_SIZE) + 1
-        const totalBatches = Math.ceil(chunks.length / BATCH_SIZE)
-
-        console.log(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} chunks)...`)
-
-        const embeddingResponse = await openai.embeddings.create({
-          model: 'text-embedding-3-small',
-          input: batch,
-        })
-
-        embeddings.push(...embeddingResponse.data)
-
-        // Track token usage for this batch
-        const batchTokens = embeddingResponse.usage?.total_tokens || 0
-        totalTokensUsed += batchTokens
-
-        console.log(`Batch ${batchNumber}/${totalBatches} completed (${embeddings.length}/${chunks.length} total, ${batchTokens} tokens)`)
-      }
-
-      console.log('Embeddings generated successfully:', {
-        embeddingsCount: embeddings.length,
-        dimensions: embeddings[0].embedding.length,
-        totalTokensUsed
-      })
-
-      // Prepare document records
-      const documents = chunks.map((chunk, index) => ({
+    const { data: fileMetadata, error: fileError } = await (supabaseAdmin
+      .from('files') as any)
+      .insert({
         room_id: roomId,
         file_name: file.name,
-        content: chunk,
-        embedding: embeddings[index].embedding,
-      }))
-
-      // Insert documents into database
-      console.log('Inserting documents into Supabase...')
-      const { error: insertError } = await (supabaseAdmin
-        .from('documents') as any)
-        .insert(documents)
-
-      if (insertError) {
-        console.error('Document insert error:', insertError)
-        return NextResponse.json(
-          { error: 'ドキュメントの保存に失敗しました' },
-          { status: 500 }
-        )
-      }
-
-      // Log upload usage
-      await logUsage({
-        roomId,
-        eventType: 'upload',
-        tokensUsed: 0, // Upload itself doesn't use tokens
-        fileName: file.name,
-        chunkCount: chunks.length,
-        metadata: {
-          fileSize: file.size,
-          mimeType: file.type,
-        },
+        file_path: filePath,
+        file_size: file.size,
+        mime_type: file.type,
+        processing_status: 'pending',
+        chunk_count: chunks.length,
+        processed_chunks: 0,
       })
+      .select('id')
+      .single()
 
-      // Log embedding usage
-      await logUsage({
-        roomId,
-        eventType: 'embedding',
-        tokensUsed: totalTokensUsed,
-        fileName: file.name,
-        chunkCount: chunks.length,
-        metadata: {
-          model: 'text-embedding-3-small',
-          embeddingsCount: embeddings.length,
-        },
-      })
-
-      console.log('Upload completed successfully!')
-      return NextResponse.json({
-        message: 'ファイルをアップロードしました',
-        file_name: file.name,
-        chunks_count: chunks.length,
-      })
-    } catch (error) {
-      console.error('OpenAI API error:', error)
+    if (fileError || !fileMetadata) {
+      console.error('File metadata error:', fileError)
       return NextResponse.json(
-        { error: 'AI処理に失敗しました。APIキーを確認してください。' },
+        { error: 'ファイルメタデータの保存に失敗しました' },
         { status: 500 }
       )
     }
+
+    console.log('File metadata saved:', fileMetadata.id)
+
+    // Insert documents without embeddings (will be processed asynchronously)
+    const documents = chunks.map(chunk => ({
+      room_id: roomId,
+      file_id: fileMetadata.id,
+      file_name: file.name,
+      content: chunk,
+      embedding: null, // Will be filled by background processing
+    }))
+
+    console.log('Inserting documents into Supabase...')
+    const { error: insertError } = await (supabaseAdmin
+      .from('documents') as any)
+      .insert(documents)
+
+    if (insertError) {
+      console.error('Document insert error:', insertError)
+
+      // Clean up file metadata
+      await (supabaseAdmin
+        .from('files') as any)
+        .delete()
+        .eq('id', fileMetadata.id)
+
+      return NextResponse.json(
+        { error: 'ドキュメントの保存に失敗しました' },
+        { status: 500 }
+      )
+    }
+
+    // Log upload usage
+    await logUsage({
+      roomId,
+      eventType: 'upload',
+      tokensUsed: 0, // Upload itself doesn't use tokens
+      fileName: file.name,
+      chunkCount: chunks.length,
+      metadata: {
+        fileSize: file.size,
+        mimeType: file.type,
+        fileId: fileMetadata.id,
+        asyncProcessing: true,
+      },
+    })
+
+    console.log('Upload completed successfully! Embeddings will be processed asynchronously.')
+    return NextResponse.json({
+      message: 'ファイルをアップロードしました',
+      file_id: fileMetadata.id,
+      file_name: file.name,
+      chunks_count: chunks.length,
+      processing_status: 'pending',
+    })
   } catch (error) {
     console.error('POST /api/rooms/[roomId]/upload error:', error)
     return NextResponse.json(

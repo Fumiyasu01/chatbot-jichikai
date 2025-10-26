@@ -36,7 +36,8 @@ export type Database = {
           room_id: string
           file_name: string
           content: string
-          embedding: number[]
+          embedding: number[] | null
+          file_id: string | null
           created_at: string
         }
         Insert: {
@@ -44,7 +45,8 @@ export type Database = {
           room_id: string
           file_name: string
           content: string
-          embedding: number[]
+          embedding?: number[] | null
+          file_id?: string | null
           created_at?: string
         }
         Update: {
@@ -52,7 +54,8 @@ export type Database = {
           room_id?: string
           file_name?: string
           content?: string
-          embedding?: number[]
+          embedding?: number[] | null
+          file_id?: string | null
           created_at?: string
         }
       }
@@ -64,7 +67,12 @@ export type Database = {
           file_path: string
           file_size: number
           mime_type: string
+          processing_status: 'pending' | 'processing' | 'completed' | 'failed'
+          error_message: string | null
+          chunk_count: number
+          processed_chunks: number
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
@@ -73,7 +81,12 @@ export type Database = {
           file_path: string
           file_size: number
           mime_type: string
+          processing_status?: 'pending' | 'processing' | 'completed' | 'failed'
+          error_message?: string | null
+          chunk_count?: number
+          processed_chunks?: number
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
@@ -82,7 +95,12 @@ export type Database = {
           file_path?: string
           file_size?: number
           mime_type?: string
+          processing_status?: 'pending' | 'processing' | 'completed' | 'failed'
+          error_message?: string | null
+          chunk_count?: number
+          processed_chunks?: number
           created_at?: string
+          updated_at?: string
         }
       }
     }
