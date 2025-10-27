@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { decrypt } from '@/lib/utils/crypto'
 import { logUsage } from '@/lib/usage-tracking'
 import { splitIntoChunks } from '@/lib/utils/chunking'
+import { extractText } from '@/lib/utils/text-extraction'
 import OpenAI from 'openai'
 
 const ENCRYPTION_PASSWORD = process.env.SUPER_ADMIN_KEY || 'default-password'
@@ -57,6 +58,8 @@ export async function POST(
       chunk_count: number
       processed_chunks: number
       file_name: string
+      file_data: Buffer | null
+      mime_type: string
     }
     const fileData = file as FileData
 
@@ -118,28 +121,57 @@ export async function POST(
     if (fileData.chunk_count === 0) {
       console.log('Chunking text for the first time...')
 
-      // Get the full text document
-      const { data: fullTextDoc, error: fullTextError } = await supabaseAdmin
-        .from('documents')
-        .select('id, content')
-        .eq('file_id', fileId)
-        .single()
+      let fullText: string
 
-      if (fullTextError || !fullTextDoc) {
-        throw new Error('全文テキストの取得に失敗しました')
+      // Check if we need to extract text from binary data first
+      if (fileData.file_data) {
+        console.log('Extracting text from binary data...')
+
+        try {
+          const buffer = Buffer.from(fileData.file_data)
+          fullText = await extractText(buffer, fileData.mime_type, fileData.file_name)
+          console.log(`Text extracted: ${fullText.length} characters`)
+
+          // Clear binary data after successful extraction to save space
+          await (supabaseAdmin
+            .from('files') as any)
+            .update({ file_data: null })
+            .eq('id', fileId)
+        } catch (extractError) {
+          console.error('Text extraction error:', extractError)
+          await (supabaseAdmin
+            .from('files') as any)
+            .update({
+              processing_status: 'failed',
+              error_message: 'テキスト抽出に失敗しました'
+            })
+            .eq('id', fileId)
+          throw new Error('テキスト抽出に失敗しました')
+        }
+      } else {
+        // Fallback: Get the full text document (for files uploaded with old flow)
+        const { data: fullTextDoc, error: fullTextError } = await supabaseAdmin
+          .from('documents')
+          .select('id, content')
+          .eq('file_id', fileId)
+          .single()
+
+        if (fullTextError || !fullTextDoc) {
+          throw new Error('全文テキストの取得に失敗しました')
+        }
+
+        fullText = (fullTextDoc as { id: string; content: string }).content
+
+        // Delete the temporary full-text document
+        await (supabaseAdmin
+          .from('documents') as any)
+          .delete()
+          .eq('id', (fullTextDoc as { id: string }).id)
       }
-
-      const fullText = (fullTextDoc as { id: string; content: string }).content
 
       // Split into chunks
       const chunks = splitIntoChunks(fullText, 1000, 200)
       console.log(`Text split into ${chunks.length} chunks`)
-
-      // Delete the temporary full-text document
-      await (supabaseAdmin
-        .from('documents') as any)
-        .delete()
-        .eq('id', (fullTextDoc as { id: string }).id)
 
       // Insert chunked documents
       const chunkDocuments = chunks.map(chunk => ({

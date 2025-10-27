@@ -67,6 +67,7 @@ export type Database = {
           file_path: string
           file_size: number
           mime_type: string
+          file_data: Buffer | null
           processing_status: 'pending' | 'processing' | 'completed' | 'failed'
           error_message: string | null
           chunk_count: number
@@ -81,6 +82,7 @@ export type Database = {
           file_path: string
           file_size: number
           mime_type: string
+          file_data?: Buffer | null
           processing_status?: 'pending' | 'processing' | 'completed' | 'failed'
           error_message?: string | null
           chunk_count?: number
@@ -95,6 +97,7 @@ export type Database = {
           file_path?: string
           file_size?: number
           mime_type?: string
+          file_data?: Buffer | null
           processing_status?: 'pending' | 'processing' | 'completed' | 'failed'
           error_message?: string | null
           chunk_count?: number
