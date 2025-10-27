@@ -14,6 +14,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Get files
+    type FileData = {
+      id: string
+      file_name: string
+      processing_status: string
+      chunk_count: number
+      processed_chunks: number
+      error_message: string | null
+      created_at: string
+    }
+
     const { data: files, error: filesError } = await supabaseAdmin
       .from('files')
       .select('*')
@@ -25,6 +35,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Get documents
+    type DocumentData = {
+      id: string
+      file_name: string
+      content: string
+      embedding: number[] | null
+      created_at: string
+    }
+
     let query = supabaseAdmin
       .from('documents')
       .select('id, file_name, content, embedding, created_at')
@@ -48,18 +66,23 @@ export async function GET(request: NextRequest) {
       .select('file_name, id')
       .eq('room_id', roomId)
 
+    type DocCount = {
+      file_name: string
+      id: string
+    }
+
     const countsByFile: Record<string, number> = {}
     const withEmbedding: Record<string, number> = {}
     const withoutEmbedding: Record<string, number> = {}
 
     if (docCounts) {
-      for (const doc of docCounts) {
+      for (const doc of docCounts as DocCount[]) {
         countsByFile[doc.file_name] = (countsByFile[doc.file_name] || 0) + 1
       }
     }
 
     // Count embeddings
-    for (const doc of documents || []) {
+    for (const doc of (documents as DocumentData[] | null) || []) {
       const name = doc.file_name
       if (doc.embedding && doc.embedding.length > 0) {
         withEmbedding[name] = (withEmbedding[name] || 0) + 1
@@ -69,7 +92,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      files: files?.map(f => ({
+      files: (files as FileData[] | null)?.map(f => ({
         id: f.id,
         file_name: f.file_name,
         processing_status: f.processing_status,
@@ -78,7 +101,7 @@ export async function GET(request: NextRequest) {
         error_message: f.error_message,
         created_at: f.created_at,
       })),
-      documents: documents?.map(d => ({
+      documents: (documents as DocumentData[] | null)?.map(d => ({
         id: d.id,
         file_name: d.file_name,
         content_preview: d.content?.substring(0, 100),

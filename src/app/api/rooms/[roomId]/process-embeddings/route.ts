@@ -20,10 +20,11 @@ export async function POST(
 ) {
   console.log('=== PROCESS EMBEDDINGS API CALLED ===')
   const { roomId } = await params
+  let fileId: string | undefined
 
   try {
     const body = await request.json()
-    const { fileId } = body
+    fileId = body.fileId
 
     if (!fileId) {
       return NextResponse.json(
@@ -316,7 +317,6 @@ export async function POST(
 
     // Try to update file status to failed
     try {
-      const { fileId } = body // Use the body variable from line 25
       if (fileId) {
         await (supabaseAdmin
           .from('files') as any)
