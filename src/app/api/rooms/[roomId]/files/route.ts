@@ -23,7 +23,7 @@ export async function GET(
     // Fetch files
     const { data: files, error } = await supabaseAdmin
       .from('files')
-      .select('id, file_name, file_size, mime_type, created_at')
+      .select('id, file_name, file_size, mime_type, processing_status, error_message, chunk_count, processed_chunks, created_at, updated_at')
       .eq('room_id', roomId)
       .order('created_at', { ascending: false })
 

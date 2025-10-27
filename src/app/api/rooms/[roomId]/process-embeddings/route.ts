@@ -316,15 +316,15 @@ export async function POST(
 
     // Try to update file status to failed
     try {
-      const body = await request.json()
-      if (body.fileId) {
+      const { fileId } = body // Use the body variable from line 25
+      if (fileId) {
         await (supabaseAdmin
           .from('files') as any)
           .update({
             processing_status: 'failed',
             error_message: error instanceof Error ? error.message : '予期しないエラーが発生しました'
           })
-          .eq('id', body.fileId)
+          .eq('id', fileId)
       }
     } catch (updateError) {
       console.error('Failed to update file status:', updateError)
