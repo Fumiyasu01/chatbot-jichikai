@@ -129,7 +129,21 @@ export async function POST(
         console.log('Extracting text from binary data...')
 
         try {
-          const buffer = Buffer.from(fileData.file_data)
+          // Handle BYTEA data from Supabase
+          // Supabase returns BYTEA as Buffer or Uint8Array depending on environment
+          let buffer: Buffer
+          const binaryData = fileData.file_data as any // Type assertion for runtime checks
+
+          if (Buffer.isBuffer(binaryData)) {
+            buffer = binaryData
+          } else if (binaryData instanceof Uint8Array) {
+            buffer = Buffer.from(binaryData)
+          } else {
+            // If it's a hex string (fallback), convert it
+            const hexString = String(binaryData).replace(/^\\x/, '')
+            buffer = Buffer.from(hexString, 'hex')
+          }
+
           fullText = await extractText(buffer, fileData.mime_type, fileData.file_name)
           console.log(`Text extracted: ${fullText.length} characters`)
 
