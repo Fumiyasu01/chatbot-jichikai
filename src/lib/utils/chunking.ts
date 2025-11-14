@@ -1,4 +1,17 @@
 /**
+ * Internal type for chunks with position metadata
+ * Used to track chunk locations in the original normalized text
+ */
+interface ChunkWithPosition {
+  /** The chunk text content */
+  text: string
+  /** Starting position in the normalized text */
+  startPos: number
+  /** Ending position in the normalized text */
+  endPos: number
+}
+
+/**
  * Splits text into chunks of approximately equal size
  * @param text - Text to split
  * @param chunkSize - Target size of each chunk (default: 1000)
@@ -72,6 +85,76 @@ export function splitIntoChunks(
 }
 
 /**
+ * Internal function: Splits text into chunks with position information
+ * This is used internally by addContextualHeaders for performance optimization
+ * @param text - Text to split
+ * @param chunkSize - Target size of each chunk
+ * @param overlap - Number of characters to overlap between chunks
+ * @returns Array of chunks with position metadata
+ */
+function splitIntoChunksWithPositions(
+  text: string,
+  chunkSize: number = 1000,
+  overlap: number = 200
+): ChunkWithPosition[] {
+  if (!text || text.trim().length === 0) {
+    return []
+  }
+
+  const normalizedText = text
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  if (normalizedText.length <= chunkSize) {
+    return [{ text: normalizedText, startPos: 0, endPos: normalizedText.length }]
+  }
+
+  const chunks: ChunkWithPosition[] = []
+  let startIndex = 0
+
+  while (startIndex < normalizedText.length) {
+    let endIndex = startIndex + chunkSize
+
+    if (endIndex < normalizedText.length) {
+      const headingEnd = findMarkdownHeading(normalizedText, endIndex, startIndex)
+      if (headingEnd !== -1) {
+        endIndex = headingEnd
+      } else {
+        const sentenceEnd = findSentenceEnd(normalizedText, endIndex, startIndex)
+        if (sentenceEnd !== -1) {
+          endIndex = sentenceEnd
+        } else {
+          const wordEnd = findWordBoundary(normalizedText, endIndex, startIndex)
+          if (wordEnd !== -1) {
+            endIndex = wordEnd
+          }
+        }
+      }
+    }
+
+    const chunk = normalizedText.slice(startIndex, endIndex).trim()
+    if (chunk.length > 0) {
+      chunks.push({
+        text: chunk,
+        startPos: startIndex,
+        endPos: endIndex,
+      })
+    }
+
+    startIndex = endIndex - overlap
+
+    if (startIndex >= normalizedText.length || endIndex >= normalizedText.length) {
+      break
+    }
+  }
+
+  return chunks
+}
+
+/**
  * Finds the nearest markdown heading before the target index
  * Prioritizes splitting at section boundaries (## or ###)
  */
@@ -129,23 +212,26 @@ function findWordBoundary(text: string, targetIndex: number, minIndex: number): 
 }
 
 /**
- * Adds contextual headers to chunks for better semantic understanding
- * Prepends parent section headings (##, ###) to each chunk
- *
- * @param chunks - Array of text chunks
- * @param originalText - Original full text before chunking
- * @returns Array of chunks with contextual headers prepended
+ * Internal type for heading metadata
+ * Used to track heading positions in the original text
  */
-export function addContextualHeaders(chunks: string[], originalText: string): string[] {
-  // For very large documents (>100k chars), skip contextual headers to avoid performance issues
-  if (originalText.length > 100000 || chunks.length > 300) {
-    console.log('[addContextualHeaders] Skipping for large document to avoid performance issues')
-    return chunks
-  }
+interface HeadingInfo {
+  /** Heading level (1, 2, or 3) */
+  level: number
+  /** Heading text content (without # markers) */
+  text: string
+  /** Position in the normalized text */
+  position: number
+}
 
-  // Pre-process: extract all headings from original text with their positions
-  const lines = originalText.split('\n')
-  const headings: Array<{ level: number; text: string; position: number }> = []
+/**
+ * Extracts all headings from text with their positions
+ * @param text - Text to extract headings from
+ * @returns Array of heading metadata
+ */
+function extractHeadings(text: string): HeadingInfo[] {
+  const lines = text.split('\n')
+  const headings: HeadingInfo[] = []
   let position = 0
 
   for (const line of lines) {
@@ -165,53 +251,136 @@ export function addContextualHeaders(chunks: string[], originalText: string): st
     position += line.length + 1 // +1 for newline
   }
 
-  // Process chunks with improved performance
+  return headings
+}
+
+/**
+ * Finds the most recent headings before a given position
+ * @param headings - Array of heading metadata
+ * @param position - Position to search before
+ * @returns Object containing h1, h2, and h3 heading texts (or null)
+ */
+function findPrecedingHeadings(
+  headings: HeadingInfo[],
+  position: number
+): { h1: string | null; h2: string | null; h3: string | null } {
+  let h1: string | null = null
+  let h2: string | null = null
+  let h3: string | null = null
+
+  // Iterate backwards to find the most recent headings
+  for (let i = headings.length - 1; i >= 0; i--) {
+    const heading = headings[i]
+    if (heading.position >= position) continue
+
+    if (heading.level === 3 && !h3) {
+      h3 = heading.text
+    } else if (heading.level === 2 && !h2) {
+      h2 = heading.text
+    } else if (heading.level === 1 && !h1) {
+      h1 = heading.text
+    }
+
+    // Early exit if all heading levels are found
+    if (h1 && h2 && h3) break
+  }
+
+  return { h1, h2, h3 }
+}
+
+/**
+ * Builds contextual header string from heading information
+ * @param h2 - Level 2 heading text (or null)
+ * @param h3 - Level 3 heading text (or null)
+ * @param chunkStartsWithHeading - Whether the chunk already starts with a heading
+ * @returns Contextual header string
+ */
+function buildContextualHeader(
+  h2: string | null,
+  h3: string | null,
+  chunkStartsWithHeading: boolean
+): string {
+  if (chunkStartsWithHeading) {
+    return ''
+  }
+
+  let contextualHeader = ''
+  if (h2) {
+    contextualHeader += `## ${h2}\n`
+  }
+  if (h3) {
+    contextualHeader += `### ${h3}\n`
+  }
+  if (contextualHeader) {
+    contextualHeader += '\n'
+  }
+
+  return contextualHeader
+}
+
+/**
+ * Adds contextual headers to chunks for better semantic understanding
+ * Prepends parent section headings (##, ###) to each chunk
+ *
+ * @param chunks - Array of text chunks
+ * @param originalText - Original full text before chunking
+ * @returns Array of chunks with contextual headers prepended
+ */
+export function addContextualHeaders(chunks: string[], originalText: string): string[] {
+  // For very large documents (>100k chars), skip contextual headers to avoid performance issues
+  if (originalText.length > 100000 || chunks.length > 300) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[addContextualHeaders] Skipping for large document to avoid performance issues')
+    }
+    return chunks
+  }
+
+  // Normalize the original text the same way splitIntoChunks does
+  const normalizedText = originalText
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  // Extract all headings from normalized text with their positions
+  const headings = extractHeadings(normalizedText)
+
+  // If there are no headings, return chunks unchanged
+  if (headings.length === 0) {
+    return chunks
+  }
+
+  // Process chunks using indexOf with sequential search optimization
   let searchStartPos = 0
-  return chunks.map(chunk => {
+  return chunks.map((chunk, index) => {
     // Find chunk position starting from last position (sequential search optimization)
-    const chunkIndex = originalText.indexOf(chunk, searchStartPos)
+    const chunkIndex = normalizedText.indexOf(chunk, searchStartPos)
+
     if (chunkIndex === -1) {
+      // Fallback: chunk not found in normalized text
+      // This can happen if chunks were created differently or text was modified
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(
+          `[addContextualHeaders] Chunk ${index} not found in normalized text. ` +
+          `This may indicate a mismatch between chunking and original text. ` +
+          `Chunk length: ${chunk.length}, starts with: "${chunk.slice(0, 50)}..."`
+        )
+      }
       return chunk
     }
+
+    // Update search position for next iteration
     searchStartPos = chunkIndex + 1
 
     // Find the most recent headings before this chunk
-    let h1: string | null = null
-    let h2: string | null = null
-    let h3: string | null = null
-
-    for (let i = headings.length - 1; i >= 0; i--) {
-      const heading = headings[i]
-      if (heading.position >= chunkIndex) continue
-
-      if (heading.level === 3 && !h3) {
-        h3 = heading.text
-      } else if (heading.level === 2 && !h2) {
-        h2 = heading.text
-      } else if (heading.level === 1 && !h1) {
-        h1 = heading.text
-      }
-
-      if (h1 && h2 && h3) break
-    }
+    const { h2, h3 } = findPrecedingHeadings(headings, chunkIndex)
 
     // Check if chunk already starts with a heading
-    const chunkStartsWithHeading = chunk.trim().match(/^#{1,3}\s+/)
+    const chunkStartsWithHeading = chunk.trim().match(/^#{1,3}\s+/) !== null
 
-    // Build contextual header
-    let contextualHeader = ''
-
-    if (!chunkStartsWithHeading) {
-      if (h2) {
-        contextualHeader += `## ${h2}\n`
-      }
-      if (h3) {
-        contextualHeader += `### ${h3}\n`
-      }
-      if (contextualHeader) {
-        contextualHeader += '\n'
-      }
-    }
+    // Build and prepend contextual header
+    const contextualHeader = buildContextualHeader(h2, h3, chunkStartsWithHeading)
 
     return contextualHeader + chunk
   })

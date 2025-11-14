@@ -20,6 +20,17 @@ function deriveKey(password: string, salt: Buffer): Buffer {
  * @returns Base64 encoded encrypted string
  */
 export function encrypt(text: string, password: string): string {
+  // Input validation
+  if (typeof text !== 'string') {
+    throw new Error('Text must be a string')
+  }
+  if (typeof password !== 'string') {
+    throw new Error('Password must be a string')
+  }
+  if (password.length === 0) {
+    throw new Error('Password cannot be empty')
+  }
+
   try {
     const salt = crypto.randomBytes(SALT_LENGTH)
     const key = deriveKey(password, salt)
@@ -52,6 +63,24 @@ export function encrypt(text: string, password: string): string {
  * @returns Decrypted plain text
  */
 export function decrypt(encryptedData: string, password: string): string {
+  // Input validation
+  if (typeof encryptedData !== 'string') {
+    throw new Error('Encrypted data must be a string')
+  }
+  if (typeof password !== 'string') {
+    throw new Error('Password must be a string')
+  }
+  if (password.length === 0) {
+    throw new Error('Password cannot be empty')
+  }
+  if (encryptedData.length === 0) {
+    throw new Error('Encrypted data cannot be empty')
+  }
+  // Validate Base64 format
+  if (!/^[A-Za-z0-9+/]+=*$/.test(encryptedData)) {
+    throw new Error('Encrypted data must be valid Base64 format')
+  }
+
   try {
     const buffer = Buffer.from(encryptedData, 'base64')
 

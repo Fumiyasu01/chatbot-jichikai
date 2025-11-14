@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionData } from './session'
 import { supabaseAdmin } from './supabase/admin'
+import { z } from 'zod'
+
+const RoomSchema = z.object({
+  admin_key: z.string()
+}).passthrough()
+
+type RoomData = z.infer<typeof RoomSchema>
 
 export async function requireAuth(request: NextRequest, roomId: string) {
   // Check for legacy header-based auth (for backwards compatibility)
@@ -14,7 +21,15 @@ export async function requireAuth(request: NextRequest, roomId: string) {
       .eq('id', roomId)
       .single()
 
-    const roomData = room as { admin_key: string } | null
+    // Validate room data with Zod
+    let roomData: RoomData | null = null
+    if (room) {
+      try {
+        roomData = RoomSchema.parse(room)
+      } catch (error) {
+        return { authenticated: false, error: 'データ形式が不正です' }
+      }
+    }
 
     const isSuperAdmin = headerAdminKey === process.env.SUPER_ADMIN_KEY
     const isRoomAdmin = roomData && headerAdminKey === roomData.admin_key
@@ -42,7 +57,15 @@ export async function requireAuth(request: NextRequest, roomId: string) {
     .eq('id', roomId)
     .single()
 
-  const roomData = room as { admin_key: string } | null
+  // Validate room data with Zod
+  let roomData: RoomData | null = null
+  if (room) {
+    try {
+      roomData = RoomSchema.parse(room)
+    } catch (error) {
+      return { authenticated: false, error: 'データ形式が不正です' }
+    }
+  }
 
   const isSuperAdmin = session.adminKey === process.env.SUPER_ADMIN_KEY
   const isRoomAdmin = roomData && session.adminKey === roomData.admin_key

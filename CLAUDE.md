@@ -43,9 +43,150 @@ This project follows the ZEAMI Framework principles and best practices.
 
 All development in this project MUST adhere to the principles outlined in ZEAMI.md.
 
+## 🤖 Claude Code Agent Workflow
+
+### Parallel Agent Best Practices
+
+**MANDATORY: Maximize parallel execution for efficiency**
+
+```yaml
+Agent Utilization Strategy:
+  - Use Task tool with subagent_type for specialized work
+  - Launch multiple agents in parallel whenever possible
+  - Never wait sequentially when tasks are independent
+
+Parallel Execution Pattern:
+  ✅ CORRECT - Single message with multiple agents:
+    - agent1: Implement feature A
+    - agent2: Write tests for B
+    - agent3: Update documentation C
+    (All launched in ONE message)
+
+  ❌ WRONG - Sequential waiting:
+    - Launch agent1, wait for completion
+    - Then launch agent2, wait for completion
+    - Then launch agent3
+
+Subagent Types to Use:
+  - Explore: Code analysis, pattern finding, answering "how does X work?"
+  - Plan: Task planning and design decisions
+  - general-purpose: Complex multi-step implementation tasks
+```
+
+### Definition of Done (DOD)
+
+**Every phase MUST complete these steps before moving to next phase:**
+
+```yaml
+Phase Completion Checklist:
+  1. Code Implementation ✓
+  2. Type Safety Check ✓
+     - No 'any' types
+     - All imports resolved
+     - TypeScript strict mode passing
+
+  3. Code Review (Automated) ✓
+     - Launch code-review agent
+     - Address all findings
+
+  4. Production Build ✓
+     - Run: npm run build
+     - Must succeed with 0 errors
+     - Fix any warnings
+
+  5. Tests (when applicable) ✓
+     - Unit tests passing
+     - Integration tests passing
+
+  6. Documentation Update ✓
+     - Update relevant docs
+     - Add inline comments for complex logic
+
+Exit Criteria:
+  - All 6 items checked ✓
+  - No blocking issues
+  - Code committed with proper message
+```
+
+### Implementation Workflow
+
+```yaml
+Phase Start:
+  1. Create TodoList with clear tasks
+  2. Mark ONE task as in_progress
+  3. Launch parallel agents for independent work
+
+During Implementation:
+  1. Use parallel agents aggressively
+  2. Update TodoList in real-time
+  3. Complete one task before starting next
+
+Phase End (DOD):
+  1. Run type check: npx tsc --noEmit
+  2. Run build: npm run build
+  3. Launch code-review agent
+  4. Fix all issues found
+  5. Mark all tasks as completed
+  6. Commit with descriptive message
+
+Between Phases:
+  - Brief status report
+  - Ask for approval before next phase (if major changes)
+```
+
+### Efficiency Rules
+
+```yaml
+ALWAYS:
+  - Launch agents in parallel for independent tasks
+  - Use TodoWrite to track progress
+  - Run builds after significant changes
+  - Commit frequently with clear messages
+
+NEVER:
+  - Wait for one agent when others can run in parallel
+  - Skip type checking
+  - Skip production build verification
+  - Proceed with TypeScript errors
+  - Use 'any' type without strong justification
+```
+
 ## Project Structure
 
-[Document your project structure here]
+### Current Architecture
+
+```
+src/
+├── app/                    # Next.js App Router
+│   ├── chat/[roomId]/     # User chat interface
+│   ├── admin/[roomId]/    # Admin dashboard
+│   ├── super-admin/       # Super admin panel
+│   └── api/               # API routes
+├── components/
+│   └── ui/                # shadcn/ui components
+└── lib/
+    ├── supabase/          # Database client & types
+    └── utils/             # Utility functions
+```
+
+### Target Architecture (After Refactoring)
+
+```
+src/
+├── app/                    # Next.js App Router (thin layer)
+├── components/
+│   ├── chat/              # Chat-related components
+│   ├── admin/             # Admin-related components
+│   ├── shared/            # Shared components
+│   └── ui/                # shadcn/ui base components
+└── lib/
+    ├── services/          # Business logic layer
+    ├── repositories/      # Data access layer
+    ├── hooks/             # Custom React hooks
+    ├── types/             # Shared TypeScript types
+    ├── supabase/          # Database client & types
+    └── utils/             # Utility functions
+```
 
 ## Key Features
 
